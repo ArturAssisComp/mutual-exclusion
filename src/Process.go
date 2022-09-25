@@ -53,7 +53,7 @@ func doServerJob() {
 		//Converter (pj,tj) de string para int
 		pj, _ := strconv.Atoi(msg_recebida[0])
 		tj, _ := strconv.Atoi(msg_recebida[1])
-		fmt.Println("Recebido %s de <%d,%d>", order, pj, tj)
+		fmt.Printf("Recebido %s de <%d,%d>\n", order, pj, tj)
 
 		//Ricart-Agrawala: se order for um request
 		if order == "request" {
@@ -63,8 +63,8 @@ func doServerJob() {
 			} else {
 				//Pi envia reply imediato para Pj
 				//converter de int para string
-				clock := strconv.Itoa(tj)
-				p_id := strconv.Itoa(pj)
+				clock := strconv.Itoa(ti)
+				p_id := strconv.Itoa(pi)
 				//msg_reply = pi,ti,reply
 				msg_reply := p_id + "," + clock + "," + "reply"
 				buf := []byte(msg_reply)
@@ -80,6 +80,7 @@ func doServerJob() {
 			for _, p_id := range process_replies {
 				if p_id == pj {
 					reply_ja_recebido = true
+                    break
 				} else {
 					reply_ja_recebido = false
 				}
@@ -91,7 +92,7 @@ func doServerJob() {
 			}
 
 			//verificar se todos os replies já foram recebidos
-			if len(process_replies) == nServers {
+			if len(process_replies) == nServers - 1 {
 				todos_reply = true
 			}
 		} else {
@@ -131,10 +132,13 @@ func doClientJob(pj int, x string) {
 				//Multicast para todos os processos
 				//Iterar na lista de processos
 				//utilizar for range: retorna -> índice na lista, elemento da lista
-				for _, Conn := range CliConn {
-					//Conn = CliConn[i]
-					_, err := Conn.Write(buf)
-					Print_panic(err)
+				for i, Conn := range CliConn {
+                    //subtrair de 1 pois o vetor de conexões começa com 0
+                    if i != pi - 1{
+                        //Conn = CliConn[i]
+                        _, err := Conn.Write(buf)
+                        Print_panic(err)
+                    }
 				}
 
 				//Espera até receber todos os replies
