@@ -3,11 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-
-	//"math"
+	"math"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -24,8 +24,9 @@ var pi int           //Process_ID
 var state int        //Process_state
 var todos_reply bool //indica se o processo se recebeu todos os replies
 var SharedResource *net.UDPConn
-var queue []int           //lista com os processos empilhados
-var process_replies []int //lista com os processos que já enviaram reply
+var queue []int            //lista com os processos empilhados
+var process_replies []int  //lista com os processos que já enviaram reply
+var reply_ja_recebido bool //indica se o reply de certo processo já foi recebido
 
 // Função enum para definir os estados possíveis
 const (
@@ -37,6 +38,70 @@ const (
 
 func doServerJob() {
 	//Responsável por sempre receber mensagens
+	buf := make([]byte, 1024)
+
+	for {
+		//LOOP INFINITO
+		n, _, err := ServConn.ReadFromUDP(buf)
+		msg := string(buf[0:n])
+		//Fazer o splitting da mensagem
+		msg_recebida := strings.Split(msg, ",")
+		//pj := msg_recebida[0]
+		//tj := msg_recebida[1]
+		order := msg_recebida[2]
+
+		//Converter (pj,tj) de string para int
+		pj, _ := strconv.Atoi(msg_recebida[0])
+		tj, _ := strconv.Atoi(msg_recebida[1])
+		fmt.Println("Recebido %s de <%d,%d>", order, pj, tj)
+
+		//Ricart-Agrawala: se order for um request
+		if order == "request" {
+			if state == HELD || (state == WANTED && priority_check(pj, tj)) {
+				//coloca o processo Pj na fila de replies
+				queue = append(queue, pj)
+			} else {
+				//Pi envia reply imediato para Pj
+				//converter de int para string
+				clock := strconv.Itoa(tj)
+				p_id := strconv.Itoa(pj)
+				//msg_reply = pi,ti,reply
+				msg_reply := p_id + "," + clock + "," + "reply"
+				buf := []byte(msg_reply)
+
+				//envia para Pj
+				//lembrando que a lista de conexões começa em 0
+				idx := pj - 1
+				_, err := CliConn[idx].Write(buf)
+				Print_panic(err)
+			}
+		} else if order == "reply" {
+			//verificar se este reply já recebido
+			for _, p_id := range process_replies {
+				if p_id == pj {
+					reply_ja_recebido = true
+				} else {
+					reply_ja_recebido = false
+				}
+			}
+			if !reply_ja_recebido {
+				//ainda não recebeu o reply de Pj
+				process_replies = append(process_replies, pj)
+			} else {
+			}
+
+			//verificar se todos os replies já foram recebidos
+			if len(process_replies) == nServers {
+				todos_reply = true
+			}
+		} else {
+			fmt.Printf("%s não é nem reply nem request: unknown msg", order)
+		}
+
+		//Independente se for reply ou request atualizar o clock
+		tj = int(math.Max(float64(tj), float64(ti))) + 1
+		Print_panic(err)
+	}
 }
 
 func doClientJob(pj int, x string) {
@@ -91,7 +156,6 @@ func doClientJob(pj int, x string) {
 			}
 		}
 	}
-
 }
 
 func initConnections() {
@@ -136,6 +200,7 @@ func initConnections() {
 func main() {
 	initConnections()
 	state = RELEASED
+	todos_reply = false
 
 	//O fechamento de conexões deve ficar aqui, assim só fecha
 	//conexão quando a main morrer
@@ -148,12 +213,11 @@ func main() {
 
 	ch := make(chan string) //canal que guarda itens lidos do teclado
 	go readInput(ch)        //chamar rotina que ”escuta” o teclado
+	//Responsável por receber msgs: replies ou requests
+	go doServerJob()
 
 	for {
 		//Loop Infinito
-
-		//Responsável por receber msgs: replies ou requests
-		go doServerJob()
 
 		// Verificar (de forma não bloqueante) se tem algo no
 		// stdin (input do terminal)
@@ -177,6 +241,26 @@ func main() {
 }
 
 //Funções Auxiliares
+
+// Analisa quem se Pi tem a prioridade
+func priority_check(pj int, tj int) bool {
+	if ti < tj {
+		//Pi tem a prioridade
+		return true
+	} else if ti == tj {
+		//desempate no process_id
+		if pi < pj {
+			//Pi tem prioridade
+			return true
+		} else {
+			//Pi > Pj
+			return false
+		}
+	} else {
+		//ti > tj
+		return false
+	}
+}
 
 // Função que reproduz o que ocorre quando o processo entra na CS
 // Enviar msg para o SharedResource e dormir um pouco
