@@ -8,18 +8,18 @@ import (
 )
 
 // Variáveis globais interessantes para o processo
-var err string
-var myPort string          //porta do meu servidor
-var nServers int           //qtde de outros processo
-var CliConn []*net.UDPConn //vetor com conexões para os servidores
+//var err string
+//var myPort string          //porta do meu servidor
+//var nServers int           //qtde de outros processo
+//var CliConn []*net.UDPConn //vetor com conexões para os servidores
 // dos outros processos
-var ServConn *net.UDPConn //conexão do meu servidor (onde recebo
+//var ServConn *net.UDPConn //conexão do meu servidor (onde recebo
 // mensagens dos outros processos)
-var clock int
-var id int
+//var clock int
+//var id int
 
 // Referência: CES27-AtividadeDirigida-LogicalClock.pdf
-func panic(err error) {
+func CheskError(err error) {
 	if err != nil {
 		fmt.Println("Erro: ", err)
 		os.Exit(0)
@@ -28,9 +28,9 @@ func panic(err error) {
 
 func main() {
 	Address, err := net.ResolveUDPAddr("udp", ":10001")
-	panic(err)
+	CheskError(err)
 	Connection, err := net.ListenUDP("udp", Address)
-	panic(err)
+	CheskError(err)
 	defer Connection.Close()
 
 	buf := make([]byte, 1024)
@@ -44,7 +44,7 @@ func main() {
 		/* Pi, Ti, Oi
 		   Pj, Tj, Oi */
 
-		n, _, err := ServConn.ReadFromUDP(buf)
+		n, _, err := Connection.ReadFromUDP(buf)
 		msg := string(buf[0:n])
 
 		//Uma vez recebida a entrada, separar a string pela vírgula
