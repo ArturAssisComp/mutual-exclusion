@@ -41,8 +41,8 @@ func main() {
 		//na tela
 
 		//A entrada será na formato:
-		/* Ti,Pi,request
-		   Tj,Pj,release */
+		/* Pi, Ti, Oi
+		   Pj, Tj, Oi */
 
 		n, _, err := ServConn.ReadFromUDP(buf)
 		msg := string(buf[0:n])
@@ -51,11 +51,11 @@ func main() {
 		msg_print := strings.Split(msg, ",")
 
 		//Novo formato:
-		//msg_print[0] = "Ti"
-		//msg_print[1] = "Pi"
-		//msg_print[2] = "mensagem"
-		//Imprimir a entrada na tela: (Ti, Pi, msg)
-		fmt.Printf("<Clock, Process_ID, Message>: (%s, %s, %s)\n", msg_print[0], msg_print[1], msg_print[2])
+		//msg_print[0] = "Pi"
+		//msg_print[1] = "Ti"
+		//msg_print[2] = "texto simples"
+		//Imprimir a entrada na tela: (Pi, Ti, msg)
+		fmt.Printf("<Process_ID, Clock, Simple_Text>: (%s, %s, %s)\n", msg_print[0], msg_print[1], msg_print[2])
 
 		//Se houver erro
 		if err != nil {
