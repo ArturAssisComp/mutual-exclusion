@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+    "sync"
 )
 
 // Variáveis globais interessantes para o processo
@@ -36,7 +37,7 @@ const (
 	HELD            //Está na CS
 )
 
-func doServerJob() {
+func doServerJob(mutex *sync.Mutex) {
 	//Responsável por sempre receber mensagens
 	buf := make([]byte, 1024)
 
@@ -53,14 +54,29 @@ func doServerJob() {
 		//Converter (pj,tj) de string para int
 		pj, _ := strconv.Atoi(msg_recebida[0])
 		tj, _ := strconv.Atoi(msg_recebida[1])
-		fmt.Printf("Recebido %s de <%d,%d>\n", order, pj, tj)
+        fmt.Printf("Recebido %s de <p:%d,t:%d>\n", order, pj, tj)
 
 		//Ricart-Agrawala: se order for um request
 		if order == "request" {
 			if state == HELD || (state == WANTED && priority_check(pj, tj)) {
 				//coloca o processo Pj na fila de replies
+                mutex.Lock()
 				queue = append(queue, pj)
+                mutex.Unlock()
+                fmt.Printf("Colocado na fila: <p:%d,t:%d>\n", pj, tj)
+                //Update clock:
+                mutex.Lock()
+                oldTi := ti
+                ti = int(math.Max(float64(tj), float64(ti))) + 1
+                fmt.Printf("(atualizando timestamp: %d -> %d)\n", oldTi, ti)
+                mutex.Unlock()
 			} else {
+                //Update clock:
+                mutex.Lock()
+                oldTi := ti
+                ti = int(math.Max(float64(tj), float64(ti))) + 1
+                fmt.Printf("(atualizando timestamp: %d -> %d)\n", oldTi, ti)
+                mutex.Unlock()
 				//Pi envia reply imediato para Pj
 				//converter de int para string
 				clock := strconv.Itoa(ti)
@@ -73,9 +89,16 @@ func doServerJob() {
 				//lembrando que a lista de conexões começa em 0
 				idx := pj - 1
 				_, err := CliConn[idx].Write(buf)
+                fmt.Printf("Reply enviado para: <p:%d>\n", pj)
 				Print_panic(err)
 			}
 		} else if order == "reply" {
+            //Update clock:
+            mutex.Lock()
+            oldTi := ti
+            ti = int(math.Max(float64(tj), float64(ti))) + 1
+            fmt.Printf("(atualizando timestamp: %d -> %d)\n", oldTi, ti)
+            mutex.Unlock()
 			//verificar se este reply já recebido
 			for _, p_id := range process_replies {
 				if p_id == pj {
@@ -87,29 +110,33 @@ func doServerJob() {
 			}
 			if !reply_ja_recebido {
 				//ainda não recebeu o reply de Pj
+                mutex.Lock()
 				process_replies = append(process_replies, pj)
+                mutex.Unlock()
 			} else {
 			}
 
 			//verificar se todos os replies já foram recebidos
 			if len(process_replies) == nServers - 1 {
+                mutex.Lock()
 				todos_reply = true
+                mutex.Unlock()
 			}
 		} else {
 			fmt.Printf("%s não é nem reply nem request: unknown msg", order)
 		}
-
-		//Independente se for reply ou request atualizar o clock
-		tj = int(math.Max(float64(tj), float64(ti))) + 1
 		Print_panic(err)
 	}
 }
 
-func doClientJob(pj int, x string) {
+func doClientJob(pj int, x string, mutex *sync.Mutex) {
 	//Verificar se houve ação interna
 	if pj == pi {
 		//incrementa o clock
+        mutex.Lock()
 		ti += 1
+        fmt.Printf("(atualizando timestamp: %d -> %d)\n", ti - 1, ti)
+        mutex.Unlock()
 	} else {
 		//Ricart-Agrawala: verificar se foi solicitado acesso à CS
 		if x == "x" {
@@ -117,12 +144,15 @@ func doClientJob(pj int, x string) {
 			if state == HELD || state == WANTED {
 				fmt.Println("x ingnorado")
 			} else {
-				texto := "Palmeiras"
+				texto := "Oi"
 				//Ricart-Agrawala: processo (pi.ti) solicita acesso
+                mutex.Lock()
 				state = WANTED
 				//Converter int para string a fim de transmitir uma msg
 				//Incrementa o clock apenas uma ve antes de enviar os requests
 				ti += 1
+                fmt.Printf("(atualizando timestamp: %d -> %d)\n", ti - 1, ti)
+                mutex.Unlock()
 				clock := strconv.Itoa(ti)
 				p_id := strconv.Itoa(pi)
 				//msg_acesso = pi,ti,request
@@ -138,6 +168,7 @@ func doClientJob(pj int, x string) {
                         //Conn = CliConn[i]
                         _, err := Conn.Write(buf)
                         Print_panic(err)
+                        fmt.Printf("Request enviado para: <p:%d>\n", i + 1)
                     }
 				}
 
@@ -147,16 +178,22 @@ func doClientJob(pj int, x string) {
 				}
 
 				//Se recebeu todos os replies, entrar na CS
-				Usar_a_CS(pi, ti, texto)
+				Usar_a_CS(pi, ti, texto, mutex)
 
 				//Depois de usar a CS, dar release e sair
 				fmt.Println("Sai da CS")
+                mutex.Lock()
+				ti += 1
+                fmt.Printf("(atualizando timestamp: %d -> %d)\n", ti - 1, ti)
 				state = RELEASED
 				todos_reply = false
+                mutex.Unlock()
 				//Dar reply para os processos empilhados
-				reply_to_queue()
+				reply_to_queue(mutex)
 				//Esvaziar a list de processos que já enviaram reply
+                mutex.Lock()
 				process_replies = nil
+                mutex.Unlock()
 			}
 		}
 	}
@@ -165,6 +202,7 @@ func doClientJob(pj int, x string) {
 func initConnections() {
 	//No inicio o clock é setado como zero
 	ti = 0
+    fmt.Printf("(iniciando timestamp: %d)\n", ti)
 
 	pi, _ = strconv.Atoi(os.Args[1])
 	myPort = os.Args[pi+1]
@@ -205,6 +243,7 @@ func main() {
 	initConnections()
 	state = RELEASED
 	todos_reply = false
+    var mutex sync.Mutex
 
 	//O fechamento de conexões deve ficar aqui, assim só fecha
 	//conexão quando a main morrer
@@ -218,7 +257,7 @@ func main() {
 	ch := make(chan string) //canal que guarda itens lidos do teclado
 	go readInput(ch)        //chamar rotina que ”escuta” o teclado
 	//Responsável por receber msgs: replies ou requests
-	go doServerJob()
+	go doServerJob(&mutex)
 
 	for {
 		//Loop Infinito
@@ -230,7 +269,7 @@ func main() {
 			if valid {
 				//transformação string para int
 				pj, _ := strconv.Atoi(x)
-				go doClientJob(pj, x)
+				go doClientJob(pj, x, &mutex)
 			} else {
 				fmt.Println("Canal fechado!")
 			}
@@ -268,9 +307,11 @@ func priority_check(pj int, tj int) bool {
 
 // Função que reproduz o que ocorre quando o processo entra na CS
 // Enviar msg para o SharedResource e dormir um pouco
-func Usar_a_CS(pi int, ti int, texto string) {
+func Usar_a_CS(pi int, ti int, texto string, mutex *sync.Mutex) {
 	fmt.Println("Entrei na CS")
+    mutex.Lock()
 	state = HELD
+    mutex.Unlock()
 
 	//converter int para string a fim de transmitir a msg
 	p_id := strconv.Itoa(pi)
@@ -288,7 +329,7 @@ func Usar_a_CS(pi int, ti int, texto string) {
 }
 
 // Envia msgs de reply para todos os processos empilhados
-func reply_to_queue() {
+func reply_to_queue(mutex *sync.Mutex) {
 	//Para enviar mensagens de reply
 	//converter de int para string
 	clock := strconv.Itoa(ti)
@@ -304,8 +345,13 @@ func reply_to_queue() {
 		idx := pj - 1
 		//Enviar reply
 		_, err := CliConn[idx].Write(buf)
+        fmt.Printf("Reply enviado para (da fila): <p:%d>\n", pj)
 		Print_panic(err)
 	}
+    //Reset queue:
+    mutex.Lock()
+    queue = make([]int, 0)
+    mutex.Unlock()
 }
 
 // Referência: CES27-AtividadeDirigida-LogicalClock.pdf

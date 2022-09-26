@@ -35,6 +35,7 @@ func main() {
 
 	buf := make([]byte, 1024)
 
+    fmt.Printf("Starting SharedResource Server\n(process ID, timestamp, message    )\n")
 	for {
 		//Loop infinito para receber mensagem e escrever todo
 		//conteúdo (processo que enviou, relógio recebido e texto)
@@ -55,7 +56,7 @@ func main() {
 		//msg_print[1] = "Ti"
 		//msg_print[2] = "texto simples"
 		//Imprimir a entrada na tela: (Pi, Ti, msg)
-		fmt.Printf("<Process_ID, Clock, Simple_Text>: (%s, %s, %s)\n", msg_print[0], msg_print[1], msg_print[2])
+        fmt.Printf(" %10s, %9s, %-11s \n", msg_print[0], msg_print[1], msg_print[2])
 
 		//Se houver erro
 		if err != nil {
